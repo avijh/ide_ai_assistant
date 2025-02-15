@@ -25,3 +25,59 @@ html, body {
 .judge0-hidden {
     display: none !important;
 }
+
+.user-prompt {
+    background-color: #2185d0; /* Light blue background */
+    padding: 10px; /* Suitable padding */
+    border-radius: 5px; /* Optional: rounded corners */
+    margin-bottom: 5px; /* Space between messages */
+}
+
+.ai-response {
+    background-color: #e0f7fa; /* Light blue background */
+    padding: 10px; /* Suitable padding */
+    border-radius: 5px; /* Optional: rounded corners */
+    margin-bottom: 5px; /* Space between messages */
+}
+
+#selection-menu {
+    position: absolute;
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    padding: 4px;
+    display: flex;
+    gap: 4px;
+}
+
+#selection-menu button {
+    padding: 4px 8px;
+    background: #f0f0f0;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+}
+
+#selection-menu button:hover {
+    background: #e0e0e0;
+}
+
+.error-highlight {
+    border: 2px solid #ff4444 !important;
+    animation: error-pulse 0.5s ease-in-out 3;
+}
+
+@keyframes error-pulse {
+    0%, 100% { border-color: #ff4444; }
+    50% { border-color: #ff8888; }
+}
+
+.thinking-message {
+    background: #f3f4f6;
+    padding: 8px;
+    margin: 4px 0;
+    border-radius: 4px;
+    color: #6b7280;
+    font-style: italic;
+}

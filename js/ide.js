@@ -4,6 +4,13 @@ const AUTH_HEADERS = API_KEY ? {
     "Authorization": `Bearer ${API_KEY}`
 } : {};
 
+let OPENROUTER_API_KEY = localStorage.getItem("OPENROUTER_API_KEY") || '';
+
+function setOpenRouterApiKey(key) {
+    localStorage.setItem("OPENROUTER_API_KEY", key);
+    OPENROUTER_API_KEY = key;
+}
+
 const CE = "CE";
 const EXTRA_CE = "EXTRA_CE";
 
@@ -54,7 +61,7 @@ var layoutConfig = {
         type: "row",
         content: [{
             type: "component",
-            width: 66,
+            width: 50,
             componentName: "source",
             id: "source",
             title: "Source Code",
@@ -83,12 +90,142 @@ var layoutConfig = {
                     readOnly: true
                 }
             }]
+        }, {
+            type: "column",
+            content: [{
+                type: "component",
+                componentName: "ai",
+                id: "ai",
+                title: "Code Assistant",
+                isClosable: false,
+
+                componentState: {
+                    readOnly: false
+                }
+            }]
         }]
     }]
 };
 
 const PUTER = puter.env === "app";
 var gPuterFile;
+
+function getAIContainerHTML() {
+    return `
+                <div style="display: flex; flex-direction: column; height: 100%; padding: 10px;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <span class="text" style="margin-right: 10px;">API Key:</span>
+                        <input type="password" id="api-key-input" style="flex-grow: 1; padding: 4px;" value="${OPENROUTER_API_KEY}">
+                        <button 
+                            type="button" 
+                            id="save-api-key-btn" 
+                            style="padding: 4px 8px; background: #3b82f6; color: white; border: none; border-radius: 4px;"
+                        >
+                            Save Key
+                        </button>
+                    </div>
+                    <div style="display: flex; align-items: center; margin-bottom: 10px;">
+                        <span for="ai-model-select" class="text" style="margin-right: 10px;">Select model: </span>
+                        <select id="ai-model-select" style="margin-left: 10px;">
+                            <option value="google/gemini-2.0-flash-thinking-exp:free">Google: Gemini 2.0 Flash Thinking Experimental 01-21 (free)</option>
+                            <option value="deepseek/deepseek-r1-distill-llama-70b:free">DeepSeek: R1 Distill Llama 70B (free)</option>
+                            <option value="meta-llama/llama-3.3-70b-instruct:free">Meta: Llama 3.3 70B Instruct (free)</option>
+                            <option value="google/gemma-2-9b-it:free">Google: Gemma 2 9B (free)</option>
+                            <option value="mistralai/mistral-7b-instruct:free">Mistral: Mistral 7B Instruct (free)</option>
+                        </select>
+                    </div>
+
+                    <!-- AI Chat DIV -->
+                    <div id="ai-chat" style="flex-grow: 1; border: 1px solid #ccc; padding: 10px; overflow-y: auto; margin-bottom: 10px;">
+                        <!-- AI chat (prompt and response) will be displayed here -->
+                    </div>
+
+                    <form id="ai-prompt-form" style="margin-top: 10px;">
+                        <div style="display: flex; gap: 10px;">
+                            <textarea 
+                                id="ai-prompt-input" 
+                                placeholder="How can I help" 
+                                style="flex-grow: 1; height: 90px; resize: vertical;"
+                            >How would you improve this code?</textarea>
+                            <button 
+                                type="submit" 
+                                style="height: 90px; padding: 8px 16px; background: #3b82f6; color: white; border: none; border-radius: 4px; display: flex; align-items: center; gap: 8px;"
+                            >
+                                <img src="images/paper-plane-origami-svgrepo-com.svg" style="width: 24px; height: 24px; filter: invert(1);">
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            `;
+}
+
+async function sendRequestToModel() { 
+    
+    const prompt = document.getElementById('ai-prompt-input').value;
+    const model = document.getElementById('ai-model-select').value;
+    
+    const codeContext = {
+        source_code: sourceEditor.getValue(),
+        stdin: stdinEditor.getValue(),
+        stdout: stdoutEditor.getValue()
+    }
+    
+    console.log("Prompt submitted:", prompt, "Model selected:", model, "Code Context:", codeContext, "API Key:", OPENROUTER_API_KEY);
+    
+    // Display thinking message
+    const aiChat = document.getElementById('ai-chat');
+    aiChat.insertAdjacentHTML('beforeend', 
+        '<div id="thinking-message" class="thinking-message">Thinking...</div>'
+    );
+
+    // Call the OpenRouter API
+    const response = await fetch(`https://openrouter.ai/api/v1/chat/completions`, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            model: model,
+            messages: [
+                { 
+                    role: "system", 
+                    content: `You are a coding assistant that can answer questions about the code.
+                                You are given a prompt and you need to answer the prompt. 
+                                Provide clear, concise and accurate responses to the code.
+                                You can use the code to answer the prompt.
+                                Do not make up an answer, only use the code to answer the user prompt.
+                                If you include any code in your response, be sure to enclose it in a code block.
+                                If the user prompt is not related to the code, just say "I'm sorry, I can only answer questions about the code."
+                                Here is the code context:
+                                Source Code: ${codeContext.source_code}
+                                Stdin: ${codeContext.stdin}
+                                Stdout: ${codeContext.stdout}
+                                ` 
+                },
+                {
+                    role: "user",
+                    content: `Here is the user prompt: <user_prompt>${prompt}</user_prompt> `
+                }
+            ]
+        })
+    }); // fetch request to openrouter
+
+    console.log("Response inside function:", response);
+    return response;
+}
+
+function addSelectionToChat() {
+    const selection = sourceEditor.getSelection();
+    const model = sourceEditor.getModel();
+    const selectedText = model.getValueInRange(selection);
+
+    console.log("Start Line Number: ", selection.startLineNumber, "End Line Number: ", selection.endLineNumber, "Selected text:", selectedText);
+
+    const currentPrompt = document.getElementById('ai-prompt-input').value;
+    const formattedText = `/* Selected code (lines ${selection.startLineNumber}-${selection.endLineNumber}): */\n<code>${selectedText}</code>\n\n`;
+    document.getElementById('ai-prompt-input').value = formattedText + currentPrompt;
+}
 
 function encode(str) {
     return btoa(unescape(encodeURIComponent(str || "")));
@@ -254,7 +391,7 @@ function run() {
     } else {
         sendRequest(data);
     }
-}
+} //run()
 
 function fetchSubmission(flavor, region, submission_token, iteration) {
     if (iteration >= MAX_PROBE_REQUESTS) {
@@ -484,6 +621,8 @@ $(document).ready(async function () {
 
     $runBtn = $("#run-btn");
     $runBtn.click(run);
+    
+ 
 
     $("#open-file-input").change(function (e) {
         const selectedFile = e.target.files[0];
@@ -581,14 +720,111 @@ $(document).ready(async function () {
                 }
             });
         });
+        
+        // Register the AI chat component
+        layout.registerComponent("ai", function (container, state) {
+            // Create a container for the AI chat UI
+            const aiContainer = container.getElement()[0];
+            aiContainer.innerHTML = getAIContainerHTML();
+        });
 
         layout.on("initialised", function () {
             setDefaults();
             refreshLayoutSize();
-            window.top.postMessage({ event: "initialised" }, "*");
-        });
+            
+            sourceEditor.onDidChangeCursorSelection((e) => {
+                const selection = sourceEditor.getSelection();
+                const menu = document.getElementById('selection-menu');
+                
+                if (!selection.isEmpty()) {
+                    const pos = sourceEditor.getScrolledVisiblePosition(selection.getStartPosition());
+                    const coords = sourceEditor.getScrolledVisiblePosition(selection.getStartPosition());
+                    const editorDomNode = sourceEditor.getDomNode();
+                    const editorRect = editorDomNode.getBoundingClientRect();
+                    
+                    menu.style.display = 'block';
+                    menu.style.position = 'absolute';
+                    menu.style.left = `${editorRect.left + coords.left}px`;
+                    menu.style.top = `${editorRect.top + coords.top - 30}px`;
+                } else {
+                    menu.style.display = 'none';
+                }
+            });
+
+            // Add an event listener for the save key button
+            document.getElementById('save-api-key-btn').addEventListener('click', function() {
+                const apiKey = document.getElementById('api-key-input').value;
+                setOpenRouterApiKey(apiKey);
+            });
+
+             // Add event listener for form submission
+            document.getElementById('ai-prompt-form').addEventListener('submit', async function(event) {
+                event.preventDefault(); // Prevent default form submission        
+
+                // Send the request to the model    
+                const response = await sendRequestToModel();
+                const responseData = await response.json();
+
+                if (responseData.choices && responseData.choices.length > 0 && responseData.choices[0].message && responseData.choices[0].message.content) {
+                    console.log("Response Content (using choices):", responseData.choices[0].message.content);
+                    // Display the response
+                    const aiChat = document.getElementById('ai-chat');
+
+                    const responseContent = responseData.choices[0].message.content;
+                    //const htmlContent = markdownToHTML(responseContent); // Convert markdown to HTML
+                    const htmlContent = marked.parse(responseContent); // Convert markdown to HTML
+                    const userPrompt = document.getElementById('ai-prompt-input').value;
+                    //console.log("HTML Content:", htmlContent);
+
+                    // Remove the thinking message after the request is sent
+                    const thinkingMessage = document.getElementById('thinking-message');
+                    if (thinkingMessage) {
+                        thinkingMessage.remove();
+                    }
+
+                    // Add the user prompt and response to the chat
+                    const model = document.getElementById('ai-model-select').value;
+                    aiChat.innerHTML += `<div class='user-prompt'><strong>${userPrompt}</strong><br/>Model: ${model}</div>`;
+                    aiChat.innerHTML += `<div class='ai-response'>${htmlContent}</div>`;
+                } else {
+                    console.log("No response content found");
+                    console.log("Response:", response);
+                }
+                // Clear the input after submission
+                document.getElementById('ai-prompt-input').value = '';
+
+                window.top.postMessage({ event: "initialised" }, "*");
+                
+            });
+        }); //layout.on()
 
         layout.init();
+
+        // Observer setup to detect errors in the stdout
+        const stdoutObserver = new MutationObserver((mutations) => {
+            mutations.forEach(mutation => {
+                const stdoutContent = stdoutEditor.getValue().toLowerCase();
+                if (stdoutContent.includes("error") || stdoutContent.includes("exception")) {
+                    console.log("Error detected:", stdoutContent);
+                    // Add your error handling logic here
+                }
+            });
+        }); //stdout Observer
+
+        // Start observing when run button is clicked
+        document.getElementById('run-btn').addEventListener('click', () => {
+            //console.log("Run button clicked");
+            // Configure observer to watch for text changes
+            stdoutObserver.observe(stdoutEditor.getContainerDomNode(), {
+                childList: true,
+                subtree: true,
+                characterData: true
+            });
+            
+            // Disconnect after 5s to prevent memory leaks
+            setTimeout(() => stdoutObserver.disconnect(), 5000);
+        }); //run button click event listener
+
     });
 
     let superKey = "⌘";
@@ -654,132 +890,35 @@ $(document).ready(async function () {
     };
 });
 
-const DEFAULT_SOURCE = "\
-#include <algorithm>\n\
-#include <cstdint>\n\
-#include <iostream>\n\
-#include <limits>\n\
-#include <set>\n\
-#include <utility>\n\
-#include <vector>\n\
-\n\
-using Vertex    = std::uint16_t;\n\
-using Cost      = std::uint16_t;\n\
-using Edge      = std::pair< Vertex, Cost >;\n\
-using Graph     = std::vector< std::vector< Edge > >;\n\
-using CostTable = std::vector< std::uint64_t >;\n\
-\n\
-constexpr auto kInfiniteCost{ std::numeric_limits< CostTable::value_type >::max() };\n\
-\n\
-auto dijkstra( Vertex const start, Vertex const end, Graph const & graph, CostTable & costTable )\n\
-{\n\
-    std::fill( costTable.begin(), costTable.end(), kInfiniteCost );\n\
-    costTable[ start ] = 0;\n\
-\n\
-    std::set< std::pair< CostTable::value_type, Vertex > > minHeap;\n\
-    minHeap.emplace( 0, start );\n\
-\n\
-    while ( !minHeap.empty() )\n\
-    {\n\
-        auto const vertexCost{ minHeap.begin()->first  };\n\
-        auto const vertex    { minHeap.begin()->second };\n\
-\n\
-        minHeap.erase( minHeap.begin() );\n\
-\n\
-        if ( vertex == end )\n\
-        {\n\
-            break;\n\
-        }\n\
-\n\
-        for ( auto const & neighbourEdge : graph[ vertex ] )\n\
-        {\n\
-            auto const & neighbour{ neighbourEdge.first };\n\
-            auto const & cost{ neighbourEdge.second };\n\
-\n\
-            if ( costTable[ neighbour ] > vertexCost + cost )\n\
-            {\n\
-                minHeap.erase( { costTable[ neighbour ], neighbour } );\n\
-                costTable[ neighbour ] = vertexCost + cost;\n\
-                minHeap.emplace( costTable[ neighbour ], neighbour );\n\
-            }\n\
-        }\n\
-    }\n\
-\n\
-    return costTable[ end ];\n\
-}\n\
-\n\
-int main()\n\
-{\n\
-    constexpr std::uint16_t maxVertices{ 10000 };\n\
-\n\
-    Graph     graph    ( maxVertices );\n\
-    CostTable costTable( maxVertices );\n\
-\n\
-    std::uint16_t testCases;\n\
-    std::cin >> testCases;\n\
-\n\
-    while ( testCases-- > 0 )\n\
-    {\n\
-        for ( auto i{ 0 }; i < maxVertices; ++i )\n\
-        {\n\
-            graph[ i ].clear();\n\
-        }\n\
-\n\
-        std::uint16_t numberOfVertices;\n\
-        std::uint16_t numberOfEdges;\n\
-\n\
-        std::cin >> numberOfVertices >> numberOfEdges;\n\
-\n\
-        for ( auto i{ 0 }; i < numberOfEdges; ++i )\n\
-        {\n\
-            Vertex from;\n\
-            Vertex to;\n\
-            Cost   cost;\n\
-\n\
-            std::cin >> from >> to >> cost;\n\
-            graph[ from ].emplace_back( to, cost );\n\
-        }\n\
-\n\
-        Vertex start;\n\
-        Vertex end;\n\
-\n\
-        std::cin >> start >> end;\n\
-\n\
-        auto const result{ dijkstra( start, end, graph, costTable ) };\n\
-\n\
-        if ( result == kInfiniteCost )\n\
-        {\n\
-            std::cout << \"NO\\n\";\n\
-        }\n\
-        else\n\
-        {\n\
-            std::cout << result << '\\n';\n\
-        }\n\
-    }\n\
-\n\
-    return 0;\n\
-}\n\
-";
+const DEFAULT_SOURCE = `
+<?php
 
-const DEFAULT_STDIN = "\
-3\n\
-3 2\n\
-1 2 5\n\
-2 3 7\n\
-1 3\n\
-3 3\n\
-1 2 4\n\
-1 3 7\n\
-2 3 1\n\
-1 3\n\
-3 1\n\
-1 2 4\n\
-1 3\n\
-";
+// 1. Generate random array
+$unsortedList = [];
+for ($i = 0; $i < 10; $i++) {
+    $unsortedList[] = rand(0, 99); // Generates a random integer between 0 and 99 (inclusive)
+}
+
+// 2. Print unsorted list
+echo "Unsorted list: ";
+print_r($unsortedList); // print_r is useful for displaying arrays
+echo "<br>"; // Add a line break for better formatting
+
+// 3. Sort the array
+sort($unsortedList); // Sorts the array in place
+
+// 4. Print sorted list
+echo "Sorted list: ";
+print_r($unsortedList);
+echo "<br>";
+
+?>`;
+
+const DEFAULT_STDIN = "";
 
 const DEFAULT_COMPILER_OPTIONS = "";
 const DEFAULT_CMD_ARGUMENTS = "";
-const DEFAULT_LANGUAGE_ID = 105; // C++ (GCC 14.1.0) (https://ce.judge0.com/languages/105)
+const DEFAULT_LANGUAGE_ID = 98; // PHP (8.3.11) (https://ce.judge0.com/languages/98)
 
 function getEditorLanguageMode(languageName) {
     const DEFAULT_EDITOR_LANGUAGE_MODE = "plaintext";
