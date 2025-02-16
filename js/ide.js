@@ -112,27 +112,16 @@ var gPuterFile;
 
 function getAIContainerHTML() {
     return `
-                <div style="display: flex; flex-direction: column; height: 100%; padding: 10px;">
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <span class="text" style="margin-right: 10px;">API Key:</span>
-                        <input type="password" id="api-key-input" style="flex-grow: 1; padding: 4px;" value="${OPENROUTER_API_KEY}">
+                <div  id="ai-container" style="display: flex; flex-direction: column; height: 100%; padding: 10px;">
+                    <div id="api-key-container" style="display: ${OPENROUTER_API_KEY === "" ? "flex" : "none"}; align-items: center; gap: 10px;">
+                        <input type="password" placeholder="Enter your OpenRouter API key" id="api-key-input" style="flex-grow: 1; padding: 4px;" value="${OPENROUTER_API_KEY}">
                         <button 
                             type="button" 
                             id="save-api-key-btn" 
                             style="padding: 4px 8px; background: #3b82f6; color: white; border: none; border-radius: 4px;"
                         >
-                            Save Key
+                             <img src="images/save-svgrepo-com.svg" style="width: 16px; height: 16px; filter: invert(1);">
                         </button>
-                    </div>
-                    <div style="display: flex; align-items: center; margin-bottom: 10px;">
-                        <span for="ai-model-select" class="text" style="margin-right: 10px;">Select model: </span>
-                        <select id="ai-model-select" style="margin-left: 10px;">
-                            <option value="google/gemini-2.0-flash-thinking-exp:free">Google: Gemini 2.0 Flash Thinking Experimental 01-21 (free)</option>
-                            <option value="deepseek/deepseek-r1-distill-llama-70b:free">DeepSeek: R1 Distill Llama 70B (free)</option>
-                            <option value="meta-llama/llama-3.3-70b-instruct:free">Meta: Llama 3.3 70B Instruct (free)</option>
-                            <option value="google/gemma-2-9b-it:free">Google: Gemma 2 9B (free)</option>
-                            <option value="mistralai/mistral-7b-instruct:free">Mistral: Mistral 7B Instruct (free)</option>
-                        </select>
                     </div>
 
                     <!-- AI Chat DIV -->
@@ -148,6 +137,7 @@ function getAIContainerHTML() {
                                 style="flex-grow: 1; height: 90px; resize: vertical;"
                             >How would you improve this code?</textarea>
                             <button 
+                                id="ai-prompt-submit-btn"
                                 type="submit" 
                                 style="height: 90px; padding: 8px 16px; background: #3b82f6; color: white; border: none; border-radius: 4px; display: flex; align-items: center; gap: 8px;"
                             >
@@ -155,6 +145,15 @@ function getAIContainerHTML() {
                             </button>
                         </div>
                     </form>
+                    <div style="display: flex; align-items: center; margin-top: 10px;">
+                        <select id="ai-model-select" style="margin-left: 10px;">
+                            <option value="google/gemini-2.0-flash-thinking-exp:free">Google: Gemini 2.0 Flash Thinking Experimental 01-21 (free)</option>
+                            <option value="deepseek/deepseek-r1-distill-llama-70b:free">DeepSeek: R1 Distill Llama 70B (free)</option>
+                            <option value="meta-llama/llama-3.3-70b-instruct:free">Meta: Llama 3.3 70B Instruct (free)</option>
+                            <option value="google/gemma-2-9b-it:free">Google: Gemma 2 9B (free)</option>
+                            <option value="mistralai/mistral-7b-instruct:free">Mistral: Mistral 7B Instruct (free)</option>
+                        </select>
+                    </div>
                 </div>
             `;
 }
@@ -725,7 +724,8 @@ $(document).ready(async function () {
         layout.registerComponent("ai", function (container, state) {
             // Create a container for the AI chat UI
             const aiContainer = container.getElement()[0];
-            aiContainer.innerHTML = getAIContainerHTML();
+            aiContainer.innerHTML = getAIContainerHTML();         
+
         });
 
         layout.on("initialised", function () {
@@ -752,9 +752,25 @@ $(document).ready(async function () {
             });
 
             // Add an event listener for the save key button
-            document.getElementById('save-api-key-btn').addEventListener('click', function() {
+            document.getElementById('save-api-key-btn').addEventListener('click', async function() {
                 const apiKey = document.getElementById('api-key-input').value;
+                let testResponse = "";
+                if (apiKey !== "") {
+                    // Validate the API key by making a test request to the OpenRouter API
+                    testResponse = await fetch("https://openrouter.ai/api/v1/auth/key", {
+                        method: "GET",
+                        headers: {
+                            "Authorization": `Bearer ${apiKey}`
+                        }
+                    });
+                }
+                if (apiKey === "" || testResponse.status !== 200) {
+                    showError("Error", "Please enter a valid OpenRouter API key. If you don't have one, you can get it from https://openrouter.ai/");
+                    return;
+                } 
                 setOpenRouterApiKey(apiKey);
+                document.getElementById('ai-prompt-submit-btn').disabled = false;
+                document.getElementById('api-key-container').style.display = 'none';
             });
 
              // Add event listener for form submission
@@ -799,6 +815,10 @@ $(document).ready(async function () {
         }); //layout.on()
 
         layout.init();
+
+        if ($("#api-key-input").val() === "") {
+            document.getElementById('ai-prompt-submit-btn').disabled = true;
+        }
 
         // Observer setup to detect errors in the stdout
         const stdoutObserver = new MutationObserver((mutations) => {
