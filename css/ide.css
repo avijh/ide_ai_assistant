@@ -81,3 +81,9 @@ html, body {
     color: #6b7280;
     font-style: italic;
 }
+
+.ai-response * code {
+    background-color: #d3d3d3;
+    padding: 2px 4px;
+    border-radius: 4px;
+}

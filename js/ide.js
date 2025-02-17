@@ -158,10 +158,13 @@ function getAIContainerHTML() {
             `;
 }
 
-async function sendRequestToModel() { 
-    
-    const prompt = document.getElementById('ai-prompt-input').value;
-    const model = document.getElementById('ai-model-select').value;
+function clearThinkingMessage() {
+    const thinkingMessage = document.getElementById('thinking-message');
+    if (thinkingMessage) {
+        thinkingMessage.remove();
+    }
+}
+async function sendRequestToModel(prompt, model) {
     
     const codeContext = {
         source_code: sourceEditor.getValue(),
@@ -169,13 +172,12 @@ async function sendRequestToModel() {
         stdout: stdoutEditor.getValue()
     }
     
-    console.log("Prompt submitted:", prompt, "Model selected:", model, "Code Context:", codeContext, "API Key:", OPENROUTER_API_KEY);
+    //console.log("Prompt submitted:", prompt, "Model selected:", model, "Code Context:", codeContext, "API Key:", OPENROUTER_API_KEY);
     
     // Display thinking message
     const aiChat = document.getElementById('ai-chat');
-    aiChat.insertAdjacentHTML('beforeend', 
-        '<div id="thinking-message" class="thinking-message">Thinking...</div>'
-    );
+    aiChat.innerHTML = aiChat.innerHTML + '<div id="thinking-message" class="thinking-message">Thinking...</div>';
+    aiChat.scrollTop = aiChat.scrollHeight;
 
     // Call the OpenRouter API
     const response = await fetch(`https://openrouter.ai/api/v1/chat/completions`, {
@@ -210,7 +212,8 @@ async function sendRequestToModel() {
         })
     }); // fetch request to openrouter
 
-    console.log("Response inside function:", response);
+    // After appending the new content, scroll to the top
+    // aiChat.scrollTop = 0; // Scroll to the top of the chat
     return response;
 }
 
@@ -776,42 +779,49 @@ $(document).ready(async function () {
              // Add event listener for form submission
             document.getElementById('ai-prompt-form').addEventListener('submit', async function(event) {
                 event.preventDefault(); // Prevent default form submission        
+                
+                // if no prompt is entered, then do nothing
+                if (document.getElementById('ai-prompt-input').value === "") {
+                    return;
+                }
+
+                // disable the submit button to prevent multiple submissions
+                document.getElementById('ai-prompt-submit-btn').disabled = true;
+                
+                // Add the user prompt to the chat
+                const aiChat = document.getElementById('ai-chat');
+                const userPrompt = document.getElementById('ai-prompt-input').value.replace(/\n/g, '<br/>');
+                const model = document.getElementById('ai-model-select').value; 
+                aiChat.innerHTML += `<div class='user-prompt'><strong>${userPrompt}</strong><br/><i>model: ${model}</i></div>`;
+                document.getElementById('ai-prompt-input').value = '';
 
                 // Send the request to the model    
-                const response = await sendRequestToModel();
+                const response = await sendRequestToModel(userPrompt, model);
                 const responseData = await response.json();
 
                 if (responseData.choices && responseData.choices.length > 0 && responseData.choices[0].message && responseData.choices[0].message.content) {
-                    console.log("Response Content (using choices):", responseData.choices[0].message.content);
+                    //console.log("Response Content (using choices):", responseData.choices[0].message.content);
                     // Display the response
-                    const aiChat = document.getElementById('ai-chat');
-
                     const responseContent = responseData.choices[0].message.content;
-                    //const htmlContent = markdownToHTML(responseContent); // Convert markdown to HTML
                     const htmlContent = marked.parse(responseContent); // Convert markdown to HTML
-                    const userPrompt = document.getElementById('ai-prompt-input').value;
                     //console.log("HTML Content:", htmlContent);
 
                     // Remove the thinking message after the request is sent
-                    const thinkingMessage = document.getElementById('thinking-message');
-                    if (thinkingMessage) {
-                        thinkingMessage.remove();
-                    }
+                    clearThinkingMessage();
 
-                    // Add the user prompt and response to the chat
-                    const model = document.getElementById('ai-model-select').value;
-                    aiChat.innerHTML += `<div class='user-prompt'><strong>${userPrompt}</strong><br/>Model: ${model}</div>`;
+                    // Add the model response to the chat
                     aiChat.innerHTML += `<div class='ai-response'>${htmlContent}</div>`;
                 } else {
                     console.log("No response content found");
                     console.log("Response:", response);
                 }
-                // Clear the input after submission
-                document.getElementById('ai-prompt-input').value = '';
+                // Re-enable the submit button
+                document.getElementById('ai-prompt-submit-btn').disabled = false;
 
                 window.top.postMessage({ event: "initialised" }, "*");
                 
-            });
+            }); // ai-prompt-form submit event listener
+
         }); //layout.on()
 
         layout.init();
@@ -821,14 +831,64 @@ $(document).ready(async function () {
         }
 
         // Observer setup to detect errors in the stdout
+        
         const stdoutObserver = new MutationObserver((mutations) => {
+            let errorDetected = false;
+            const stdoutContent = stdoutEditor.getValue().toLowerCase();
+
             mutations.forEach(mutation => {
-                const stdoutContent = stdoutEditor.getValue().toLowerCase();
+                
+                console.log("stdoutContent:", stdoutContent);
                 if (stdoutContent.includes("error") || stdoutContent.includes("exception")) {
-                    console.log("Error detected:", stdoutContent);
-                    // Add your error handling logic here
-                }
-            });
+                    //console.log("Error detected:", stdoutContent);
+                    errorDetected = true;
+                } // end of if error detected
+
+            }); // end of mutations forEach
+            
+            //console.log("errorDetected (outside loop):", errorDetected);
+            
+            if (errorDetected) {
+                // Display a panel with a label "Would you like help with this error?" and two buttons: Yes and No
+                const errorHelpPanel = document.createElement('div');
+                errorHelpPanel.innerHTML = `
+                <div id="error-help-panel" style="padding: 10px; background: #f3f4f6; border-radius: 5px; margin-bottom: 10px;">
+                    <p>Would you like help with this error?</p>
+                    <button id="error-help-yes-btn" style="margin-right: 10px;">Yes</button>
+                    <button id="error-help-no-btn">No</button>
+                </div>
+                `;
+
+                // Add the error panel to the ai-chat div
+                const aiChat = document.getElementById('ai-chat');
+                aiChat.appendChild(errorHelpPanel);
+
+                // When the user clicks on Yes, send the error to the model to get a response with help
+                document.getElementById('error-help-yes-btn').addEventListener('click', async () => {
+                    errorHelpPanel.remove();
+                    const errorHelpPrompt = `I'm getting the following error:<br/>${stdoutContent}.<br/>Please help me fix it.`;
+                    const model = document.getElementById('ai-model-select').value;
+                    const response = await sendRequestToModel(errorHelpPrompt, model);
+                    const responseData = await response.json();
+
+                    if (responseData.choices && responseData.choices.length > 0 && responseData.choices[0].message && responseData.choices[0].message.content) {
+                        const responseContent = responseData.choices[0].message.content;
+                        const htmlContent = marked.parse(responseContent);
+                        aiChat.innerHTML += `<div class='user-prompt'><strong>${errorHelpPrompt}</strong><br/><i>model: ${model}</i></div>`;
+                        aiChat.innerHTML += `<div class='ai-response'>${htmlContent}</div>`;
+                    } else {
+                        console.log("No response content found");
+                        console.log("Response:", response);
+                    }
+                    
+                    clearThinkingMessage();
+                });
+
+                // When the user clicks on No, remove the error panel
+                document.getElementById('error-help-no-btn').addEventListener('click', () => {
+                    errorHelpPanel.remove();
+                });
+            } // end of if error detected
         }); //stdout Observer
 
         // Start observing when run button is clicked
@@ -922,7 +982,6 @@ for ($i = 0; $i < 10; $i++) {
 // 2. Print unsorted list
 echo "Unsorted list: ";
 print_r($unsortedList); // print_r is useful for displaying arrays
-echo "<br>"; // Add a line break for better formatting
 
 // 3. Sort the array
 sort($unsortedList); // Sorts the array in place
@@ -930,7 +989,6 @@ sort($unsortedList); // Sorts the array in place
 // 4. Print sorted list
 echo "Sorted list: ";
 print_r($unsortedList);
-echo "<br>";
 
 ?>`;
 
